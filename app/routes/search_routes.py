@@ -1,42 +1,32 @@
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
+from sqlalchemy import select, cast, String
 from sqlalchemy.orm import selectinload
+from typing import List
+from datetime import datetime
+from sqlalchemy.exc import IntegrityError
 
-from app.repositories.product_repository import get_all_products
 from app.database.connection import get_db
 from app.models.product import Product
 from app.models.user import User
 from app.models.search import Search
-from app.services.search_service import execute_search, apply_filters
-from app.schemas.search_dto import SearchCreate, SearchResponse
+from app.services.search_service import execute_search
+from app.schemas.search_dto import SearchCreate, SearchResponse, LastSearchHistoryDTO
 
 router = APIRouter()
-
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
-from sqlalchemy.orm import selectinload
-
-# Importe sua model Search e o novo serviço
-from app.models.search import Search
-from app.services.search_service import execute_search 
 
 @router.get("/search")
 async def search_products(
     q: str,
     page: int = Query(0, ge=0),
     limit: int = Query(10, ge=1, le=100),
-
     fuzzy: bool = True,
     sort_by: str = None,
     min_score: int = 50,
-
     price_min: int = Query(None),
     price_max: int = Query(None),
     subcategory: str = Query(None),
     name_contains: str = Query(None),
-
     db: AsyncSession = Depends(get_db)
 ):
     result = await db.execute(
@@ -58,7 +48,6 @@ async def search_products(
     if name_contains:
         filters["name_contains"] = name_contains
 
-    # 3. Criar config
     search_config = Search(
         query=q,
         fuzzy=fuzzy,
@@ -92,8 +81,6 @@ async def search_products(
         "total": total
     }
 
-from datetime import datetime
-from sqlalchemy.exc import IntegrityError
 
 @router.post("/search", response_model=SearchResponse)
 async def create_search(
@@ -148,3 +135,32 @@ async def create_search(
         id=str(search.id),
         user_id=str(user.id)
     )
+
+
+@router.get("/users/{user_id}", response_model=List[LastSearchHistoryDTO])
+async def get_last_searches(
+    user_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    if not user_id or user_id.strip() == "":
+        raise HTTPException(status_code=400, detail="UserId cannot be null or empty")
+
+    user_id_str = str(user_id)
+    
+    result = await db.execute(
+        select(User).where(cast(User.id, String) == user_id)
+    )
+    user = result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    result = await db.execute(
+        select(Search)
+        .where(Search.user_id == user_id_str)
+        .order_by(Search.created_at.desc())
+        .limit(5)
+    )
+    searches = result.scalars().all()
+
+    return [LastSearchHistoryDTO(query=s.query) for s in searches]
