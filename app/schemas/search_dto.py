@@ -15,3 +15,6 @@ class SearchCreate(BaseModel):
 class SearchResponse(BaseModel):
   id: str
   user_id: str
+
+class LastSearchHistoryDTO(BaseModel):
+    query: str
