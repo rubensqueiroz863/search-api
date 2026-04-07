@@ -16,7 +16,7 @@ app = FastAPI(title="E-commerce API")
 origins = [
     "http://localhost:3000",  # front local
     "http://127.0.0.1:3000",
-    # "https://meusite.com"   # produção
+    "https://nexorashopx.vercel.app"   # produção
 ]
 
 app.add_middleware(
